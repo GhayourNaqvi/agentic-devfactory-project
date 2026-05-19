@@ -1,9 +1,9 @@
 import type {
-  PsxDataProvider,
   PsxStockRecord,
+  PsxDataProvider,
+  RetryConfig,
   GetTopStocksOptions,
   GetStockOptions,
-  RetryConfig,
 } from "./types";
 import { PsxCache } from "./cache";
 import { withRetry } from "./retry";
@@ -12,14 +12,15 @@ import {
   InvalidDataError,
   StockNotFoundError,
 } from "./errors";
+import { DEFAULT_RETRY_CONFIG, DEFAULT_CACHE_TTL_MS } from "./types";
 
-const DEFAULT_RETRY_CONFIG: RetryConfig = {
-  maxRetries: 3,
-  baseDelay: 1000,
-  timeoutMs: 10000,
-};
-
-const CACHE_TTL_MS = 300_000;
+export interface PsxServiceResult<T> {
+  data: T;
+  source: string;
+  cached: boolean;
+  cacheAge: number | null;
+  isStale: boolean;
+}
 
 export class PsxService {
   private providers: PsxDataProvider[];
@@ -27,19 +28,34 @@ export class PsxService {
   private singleCache: PsxCache<PsxStockRecord>;
   private retryConfig: RetryConfig;
 
-  constructor(providers: PsxDataProvider[], retryConfig?: Partial<RetryConfig>) {
-    this.providers = providers;
-    this.cache = new PsxCache<PsxStockRecord[]>(CACHE_TTL_MS);
-    this.singleCache = new PsxCache<PsxStockRecord>(CACHE_TTL_MS);
-    this.retryConfig = { ...DEFAULT_RETRY_CONFIG, ...retryConfig };
+  constructor(
+    providers: PsxDataProvider[],
+    retryConfig?: Partial<RetryConfig>,
+  );
+  constructor(options: {
+    providers: PsxDataProvider[];
+    cacheTtlMs?: number;
+    retryConfig?: RetryConfig;
+  });
+  constructor(
+    providersOrOptions: PsxDataProvider[] | { providers: PsxDataProvider[]; cacheTtlMs?: number; retryConfig?: RetryConfig },
+    retryConfig?: Partial<RetryConfig>,
+  ) {
+    if (Array.isArray(providersOrOptions)) {
+      this.providers = providersOrOptions;
+      this.cache = new PsxCache<PsxStockRecord[]>(DEFAULT_CACHE_TTL_MS);
+      this.singleCache = new PsxCache<PsxStockRecord>(DEFAULT_CACHE_TTL_MS);
+      this.retryConfig = { ...DEFAULT_RETRY_CONFIG, ...retryConfig };
+    } else {
+      this.providers = providersOrOptions.providers;
+      const ttl = providersOrOptions.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
+      this.cache = new PsxCache<PsxStockRecord[]>(ttl);
+      this.singleCache = new PsxCache<PsxStockRecord>(ttl);
+      this.retryConfig = providersOrOptions.retryConfig ?? DEFAULT_RETRY_CONFIG;
+    }
   }
 
-  async getTopStocks(options?: GetTopStocksOptions): Promise<{
-    data: PsxStockRecord[];
-    source: string;
-    cached: boolean;
-    cacheAge: number | null;
-  }> {
+  async getTopStocks(options?: GetTopStocksOptions): Promise<PsxServiceResult<PsxStockRecord[]>> {
     const cacheKey = `top:${options?.sector ?? "all"}`;
 
     if (!options?.forceRefresh) {
@@ -47,13 +63,14 @@ export class PsxService {
       if (cached) {
         let data = cached.data;
         if (options?.sector) {
-          data = data.filter((s) => s.sector === options.sector);
+          data = data.filter((s) => s.sector.toLowerCase().includes(options.sector!.toLowerCase()));
         }
         return {
           data,
           source: cached.source,
           cached: true,
           cacheAge: this.cache.getAge(cacheKey),
+          isStale: false,
         };
       }
     }
@@ -70,14 +87,14 @@ export class PsxService {
         );
 
         if (!data || data.length === 0) {
-          throw new InvalidDataError("Empty response from provider");
+          throw new InvalidDataError(provider.name, "Empty response");
         }
 
         this.cache.set(cacheKey, data, provider.name);
 
         let filtered = data;
         if (options?.sector) {
-          filtered = data.filter((s) => s.sector === options.sector);
+          filtered = data.filter((s) => s.sector.toLowerCase().includes(options.sector!.toLowerCase()));
         }
 
         return {
@@ -85,6 +102,7 @@ export class PsxService {
           source: provider.name,
           cached: false,
           cacheAge: null,
+          isStale: false,
         };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
@@ -92,18 +110,25 @@ export class PsxService {
       }
     }
 
-    throw new AllProvidersFailedError(
-      `All providers failed. Last error: ${lastError?.message}`,
-      attempted,
-    );
+    const cached = this.cache.get(cacheKey);
+    if (cached) {
+      let data = cached.data;
+      if (options?.sector) {
+        data = data.filter((s) => s.sector.toLowerCase().includes(options.sector!.toLowerCase()));
+      }
+      return {
+        data,
+        source: cached.source,
+        cached: true,
+        cacheAge: this.cache.getAge(cacheKey),
+        isStale: true,
+      };
+    }
+
+    throw new AllProvidersFailedError(attempted);
   }
 
-  async getStock(ticker: string, options?: GetStockOptions): Promise<{
-    data: PsxStockRecord;
-    source: string;
-    cached: boolean;
-    cacheAge: number | null;
-  }> {
+  async getStock(ticker: string, options?: GetStockOptions): Promise<PsxServiceResult<PsxStockRecord>> {
     const cacheKey = `stock:${ticker}`;
 
     if (!options?.forceRefresh) {
@@ -114,6 +139,7 @@ export class PsxService {
           source: cached.source,
           cached: true,
           cacheAge: this.singleCache.getAge(cacheKey),
+          isStale: false,
         };
       }
     }
@@ -136,6 +162,7 @@ export class PsxService {
           source: provider.name,
           cached: false,
           cacheAge: null,
+          isStale: false,
         };
       } catch (error) {
         if (error instanceof StockNotFoundError) throw error;
@@ -144,25 +171,28 @@ export class PsxService {
       }
     }
 
+    const cached = this.singleCache.get(cacheKey);
+    if (cached) {
+      return {
+        data: cached.data,
+        source: cached.source,
+        cached: true,
+        cacheAge: this.singleCache.getAge(cacheKey),
+        isStale: true,
+      };
+    }
+
     if (lastError?.message?.includes("not found")) {
       throw new StockNotFoundError(ticker);
     }
 
-    throw new AllProvidersFailedError(
-      `All providers failed for ${ticker}. Last error: ${lastError?.message}`,
-      attempted,
-    );
+    throw new AllProvidersFailedError(attempted);
   }
 
-  async getSectors(): Promise<{
-    data: string[];
-    source: string;
-    cached: boolean;
-    cacheAge: number | null;
-  }> {
-    const { data, source, cached, cacheAge } = await this.getTopStocks();
-    const sectors = [...new Set(data.map((s) => s.sector))].sort();
-    return { data: sectors, source, cached, cacheAge };
+  async getSectors(): Promise<PsxServiceResult<string[]>> {
+    const result = await this.getTopStocks();
+    const sectors = [...new Set(result.data.map((s) => s.sector))].sort();
+    return { data: sectors, source: result.source, cached: result.cached, cacheAge: result.cacheAge, isStale: result.isStale };
   }
 
   async invalidateCache(): Promise<void> {
