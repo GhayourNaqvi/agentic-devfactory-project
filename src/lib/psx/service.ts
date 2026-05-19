@@ -99,7 +99,6 @@ export class PsxService {
     }
 
     const executeFetch = async (): Promise<PsxServiceResult<PsxStockRecord[]>> => {
-      let lastError: Error | null = null;
       const attempted: string[] = [];
 
       for (const provider of this.providers) {
@@ -128,8 +127,7 @@ export class PsxService {
             cacheAge: null,
             isStale: false,
           };
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error));
+        } catch {
           continue;
         }
       }
