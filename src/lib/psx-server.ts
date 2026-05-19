@@ -5,7 +5,7 @@ const globalForPsx = globalThis as unknown as {
 };
 
 export const psxService =
-  globalForPsx.psxService ?? new PsxService({ providers: [new YahooFinanceProvider()] });
+  globalForPsx.psxService ?? new PsxService([new YahooFinanceProvider()]);
 
 if (process.env.NODE_ENV !== "production") {
   globalForPsx.psxService = psxService;
