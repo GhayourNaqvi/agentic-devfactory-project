@@ -41,28 +41,42 @@ describe("RateLimitError", () => {
 });
 
 describe("ProviderUnavailableError", () => {
-  it("includes fallbacks attempted", () => {
-    const error = new ProviderUnavailableError("down", ["yahoo", "alpha"]);
+  it("includes provider name", () => {
+    const error = new ProviderUnavailableError("yahoo");
     expect(error.name).toBe("ProviderUnavailableError");
     expect(error.statusCode).toBe(502);
-    expect(error.fallbacksAttempted).toEqual(["yahoo", "alpha"]);
+    expect(error.provider).toBe("yahoo");
+  });
+
+  it("includes cause message", () => {
+    const cause = new Error("connection refused");
+    const error = new ProviderUnavailableError("yahoo", cause);
+    expect(error.message).toContain("yahoo");
+    expect(error.message).toContain("connection refused");
   });
 });
 
 describe("InvalidDataError", () => {
   it("has correct name and status", () => {
-    const error = new InvalidDataError();
+    const error = new InvalidDataError("yahoo");
     expect(error.name).toBe("InvalidDataError");
     expect(error.statusCode).toBe(500);
+    expect(error.provider).toBe("yahoo");
+  });
+
+  it("includes detail", () => {
+    const error = new InvalidDataError("yahoo", "empty response");
+    expect(error.message).toContain("empty response");
   });
 });
 
 describe("AllProvidersFailedError", () => {
   it("includes fallbacks attempted", () => {
-    const error = new AllProvidersFailedError("all down", ["yahoo"]);
+    const error = new AllProvidersFailedError(["yahoo", "alpha"]);
     expect(error.name).toBe("AllProvidersFailedError");
     expect(error.statusCode).toBe(502);
-    expect(error.fallbacksAttempted).toEqual(["yahoo"]);
+    expect(error.fallbacksAttempted).toEqual(["yahoo", "alpha"]);
+    expect(error.message).toContain("yahoo");
   });
 });
 

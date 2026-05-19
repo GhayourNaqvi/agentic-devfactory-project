@@ -1,15 +1,20 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { TokenBucket, PerSourceRateLimiter, RateLimiterError } from "../rate-limiter";
 
 describe("TokenBucket", () => {
   let bucket: TokenBucket;
 
   beforeEach(() => {
+    vi.useFakeTimers();
     bucket = new TokenBucket({
       capacity: 5,
       refillRate: 1,
-      refillIntervalMs: 50,
+      refillIntervalMs: 100,
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("should allow requests up to capacity", async () => {
@@ -23,7 +28,15 @@ describe("TokenBucket", () => {
       await bucket.acquire();
     }
 
-    await expect(bucket.acquire({ timeoutMs: 100 })).rejects.toThrow(RateLimiterError);
+    const promise = bucket.acquire({ timeoutMs: 50 });
+
+    // Suppress unhandled rejection warning while we advance timers
+    const caught = promise.catch((e) => e);
+
+    await vi.advanceTimersByTimeAsync(60);
+
+    const result = await caught;
+    expect(result).toBeInstanceOf(RateLimiterError);
   });
 
   it("should process queued requests after refill", async () => {
@@ -31,10 +44,12 @@ describe("TokenBucket", () => {
       await bucket.acquire();
     }
 
-    const acquirePromise = bucket.acquire({ timeoutMs: 500 });
+    const promise = bucket.acquire({ timeoutMs: 500 });
 
-    await expect(acquirePromise).resolves.toBeUndefined();
-  }, 1000);
+    await vi.advanceTimersByTimeAsync(100);
+
+    await expect(promise).resolves.toBeUndefined();
+  });
 
   it("should report available tokens correctly", () => {
     expect(bucket.availableTokens).toBe(5);
@@ -45,14 +60,15 @@ describe("TokenBucket", () => {
       await bucket.acquire();
     }
 
-    const promise = bucket.acquire({ timeoutMs: 500 });
+    const promise = bucket.acquire({ timeoutMs: 1000 });
 
     expect(bucket.queuedCount).toBe(1);
 
+    await vi.advanceTimersByTimeAsync(100);
     await promise;
 
     expect(bucket.queuedCount).toBe(0);
-  }, 1000);
+  });
 
   it("should reset bucket to full capacity", async () => {
     for (let i = 0; i < 5; i++) {
@@ -71,11 +87,16 @@ describe("PerSourceRateLimiter", () => {
   let limiter: PerSourceRateLimiter;
 
   beforeEach(() => {
+    vi.useFakeTimers();
     limiter = new PerSourceRateLimiter({
       capacity: 3,
       refillRate: 1,
-      refillIntervalMs: 50,
+      refillIntervalMs: 100,
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("should create separate buckets per source", async () => {
@@ -83,9 +104,13 @@ describe("PerSourceRateLimiter", () => {
     await limiter.acquire("source-a");
     await limiter.acquire("source-a");
 
-    await expect(limiter.acquire("source-a", { timeoutMs: 50 })).rejects.toThrow(
-      RateLimiterError,
-    );
+    const promise = limiter.acquire("source-a", { timeoutMs: 50 });
+    const caught = promise.catch((e) => e);
+
+    await vi.advanceTimersByTimeAsync(60);
+
+    const result = await caught;
+    expect(result).toBeInstanceOf(RateLimiterError);
 
     await expect(limiter.acquire("source-b")).resolves.toBeUndefined();
   });

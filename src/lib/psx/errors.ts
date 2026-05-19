@@ -1,8 +1,5 @@
 export class PsxError extends Error {
-  constructor(
-    message: string,
-    public readonly statusCode: number = 500,
-  ) {
+  constructor(message: string, public readonly statusCode: number = 500) {
     super(message);
     this.name = "PsxError";
   }
@@ -24,27 +21,27 @@ export class RateLimitError extends PsxError {
 
 export class ProviderUnavailableError extends PsxError {
   constructor(
-    message: string,
-    public readonly fallbacksAttempted: string[] = [],
+    public readonly provider: string,
+    public readonly cause?: Error,
   ) {
-    super(`Provider unavailable: ${message}`, 502);
+    super(`Provider ${provider} unavailable${cause ? `: ${cause.message}` : ""}`, 502);
     this.name = "ProviderUnavailableError";
   }
 }
 
 export class InvalidDataError extends PsxError {
-  constructor() {
-    super(`Invalid data received`, 500);
+  constructor(
+    public readonly provider: string,
+    public readonly detail?: string,
+  ) {
+    super(`Invalid data from ${provider}${detail ? `: ${detail}` : ""}`, 500);
     this.name = "InvalidDataError";
   }
 }
 
 export class AllProvidersFailedError extends PsxError {
-  constructor(
-    message: string,
-    public readonly fallbacksAttempted: string[] = [],
-  ) {
-    super(`All data sources failed: ${message}`, 502);
+  constructor(public readonly fallbacksAttempted: string[]) {
+    super(`All data sources failed: ${fallbacksAttempted.join(", ")}`, 502);
     this.name = "AllProvidersFailedError";
   }
 }
