@@ -1,4 +1,4 @@
 /**
  * Custom React hooks
  */
-export {};
+export { useAutoRefresh } from "./useAutoRefresh";
