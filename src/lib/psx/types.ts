@@ -33,6 +33,7 @@ export interface PsxDataProvider {
 export interface RetryConfig {
   maxRetries: number;
   baseDelay: number;
+  maxDelay: number;
   timeoutMs: number;
 }
 
@@ -58,6 +59,7 @@ export interface PsxApiResponse<T> {
 export const DEFAULT_RETRY_CONFIG: RetryConfig = {
   maxRetries: 3,
   baseDelay: 1000,
+  maxDelay: 8000,
   timeoutMs: 10000,
 };
 
