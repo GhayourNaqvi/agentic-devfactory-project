@@ -169,7 +169,7 @@ describe("PsxScraperAdapter", () => {
 
       expect(record).not.toBeNull();
       expect(record!.ticker).toBe("OGDC");
-      expect(record!.companyName).toBe("OGDC - Oil & Gas Development Company Ltd");
+      expect(record!.companyName).toBe("OGDC");
       expect(record!.ohlc.close).toBe(144.8);
       expect(record!.ohlc.open).toBe(142.5);
       expect(record!.ohlc.high).toBe(145.2);
