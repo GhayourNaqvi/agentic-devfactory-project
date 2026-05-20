@@ -1,11 +1,17 @@
 import type { CacheEntry } from "./types";
 
-export class PsxCache<T> {
-  private store = new Map<string, CacheEntry<T>>();
-  private ttlMs: number;
+interface InternalEntry<T> extends CacheEntry<T> {
+  lastAccessedAt: number;
+}
 
-  constructor(ttlMs: number) {
+export class PsxCache<T> {
+  private store = new Map<string, InternalEntry<T>>();
+  private ttlMs: number;
+  private maxEntries: number;
+
+  constructor(ttlMs: number, maxEntries = 500) {
     this.ttlMs = ttlMs;
+    this.maxEntries = maxEntries;
   }
 
   get(key: string): CacheEntry<T> | null {
@@ -18,14 +24,20 @@ export class PsxCache<T> {
       return null;
     }
 
-    return entry;
+    entry.lastAccessedAt = Date.now();
+    return { data: entry.data, fetchedAt: entry.fetchedAt, source: entry.source };
   }
 
   set(key: string, data: T, source: string): void {
+    if (this.store.size >= this.maxEntries && !this.store.has(key)) {
+      this.evictLru();
+    }
+
     this.store.set(key, {
       data,
       fetchedAt: new Date(),
       source,
+      lastAccessedAt: Date.now(),
     });
   }
 
@@ -45,5 +57,25 @@ export class PsxCache<T> {
 
   clear(): void {
     this.store.clear();
+  }
+
+  get size(): number {
+    return this.store.size;
+  }
+
+  private evictLru(): void {
+    let lruKey: string | null = null;
+    let lruTime = Infinity;
+
+    for (const [key, entry] of this.store) {
+      if (entry.lastAccessedAt < lruTime) {
+        lruTime = entry.lastAccessedAt;
+        lruKey = key;
+      }
+    }
+
+    if (lruKey) {
+      this.store.delete(lruKey);
+    }
   }
 }

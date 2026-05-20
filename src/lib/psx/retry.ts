@@ -4,7 +4,8 @@ import { TimeoutError } from "./errors";
 export function calculateBackoff(attempt: number, config: RetryConfig): number {
   const exponential = config.baseDelay * 2 ** attempt;
   const jitter = Math.random() * config.baseDelay;
-  return exponential + jitter;
+  const maxDelay = "maxDelay" in config ? config.maxDelay : Infinity;
+  return Math.min(exponential + jitter, maxDelay);
 }
 
 export async function withTimeout<T>(

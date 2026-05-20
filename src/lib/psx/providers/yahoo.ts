@@ -100,6 +100,7 @@ export class YahooFinanceProvider extends BaseProvider {
     this.retryConfig = {
       maxRetries: retryConfig?.maxRetries ?? 3,
       baseDelay: retryConfig?.baseDelay ?? 1000,
+      maxDelay: retryConfig?.maxDelay ?? 8000,
       timeoutMs: retryConfig?.timeoutMs ?? 10000,
     };
   }

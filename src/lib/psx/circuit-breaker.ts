@@ -19,7 +19,6 @@ export class CircuitBreakerOpenError extends Error {
 export class CircuitBreaker {
   private state: CircuitState = "closed";
   private failures: number[] = [];
-  private lastFailureAt: number | null = null;
   private lastStateChangeAt: number = Date.now();
   private readonly config: CircuitBreakerConfig;
 
@@ -31,7 +30,8 @@ export class CircuitBreaker {
     if (this.state === "open") {
       const elapsed = Date.now() - this.lastStateChangeAt;
       if (elapsed >= this.config.halfOpenDelayMs) {
-        this.transitionTo("half-open");
+        this.state = "half-open";
+        this.lastStateChangeAt = Date.now();
       }
     }
     return this.state;
@@ -53,7 +53,8 @@ export class CircuitBreaker {
       const result = await fn();
 
       if (state === "half-open") {
-        this.transitionTo("closed");
+        this.state = "closed";
+        this.lastStateChangeAt = Date.now();
       }
 
       return result;
@@ -74,26 +75,26 @@ export class CircuitBreaker {
   recordFailure(): void {
     const now = Date.now();
     this.failures.push(now);
-    this.lastFailureAt = now;
-
     this.pruneOldFailures(now);
 
     if (this.failures.length >= this.config.failureThreshold) {
-      this.transitionTo("open");
+      this.state = "open";
+      this.lastStateChangeAt = Date.now();
     }
   }
 
   recordSuccess(): void {
     if (this.state === "half-open") {
-      this.transitionTo("closed");
+      this.state = "closed";
+      this.lastStateChangeAt = Date.now();
     }
     this.failures = [];
   }
 
   reset(): void {
     this.failures = [];
-    this.lastFailureAt = null;
-    this.transitionTo("closed");
+    this.state = "closed";
+    this.lastStateChangeAt = Date.now();
   }
 
   get failureCount(): number {
@@ -108,13 +109,6 @@ export class CircuitBreaker {
   private pruneOldFailures(now: number): void {
     const cutoff = now - this.config.windowMs;
     this.failures = this.failures.filter((t) => t > cutoff);
-  }
-
-  private transitionTo(newState: CircuitState): void {
-    if (this.state !== newState) {
-      this.state = newState;
-      this.lastStateChangeAt = Date.now();
-    }
   }
 }
 
@@ -149,8 +143,8 @@ export class PerSourceCircuitBreaker {
     }
   }
 
-  getState(source: string): CircuitState | undefined {
-    return this.breakers.get(source)?.currentState;
+  getState(source: string): CircuitState {
+    return this.breakers.get(source)?.currentState ?? "closed";
   }
 }
 
