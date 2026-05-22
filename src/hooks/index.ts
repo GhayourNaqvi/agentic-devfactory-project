@@ -1,4 +1,1 @@
-/**
- * Custom React hooks
- */
-export {};
+export { useStocks } from "./useStocks";
